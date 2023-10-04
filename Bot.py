@@ -83,14 +83,20 @@ async def on_member_update(before, after):
 
 # 주간 개인 과제 확인
 @bot.command()
-async def weekly_check(ctx):
+async def w(ctx):
     channel = bot.get_channel(int(CHANNEL_ID))
     threads = channel.threads
     last_message_ids = []
 
+    count = 0
+
+    await ctx.send('과제 확인 시작')
     for thread in threads:
         message_id = thread.last_message_id
-        message = await thread.fetch_message(int(message_id))
+        try:
+            message = await thread.fetch_message(int(message_id))
+        except Exception as e:
+            continue
 
         # UTC 시간을 KST로 변환
         kst_timezone = timezone(timedelta(hours=9))  # 한국 표준시(KST)
@@ -116,8 +122,12 @@ async def weekly_check(ctx):
 
         if created_at_in_range or edited_at_in_range:
             nick = message.author.nick
-            if nick is not None:
-                await ctx.send(nick)
+            if nick is None:
+                nick = message.author.display_name
+            await ctx.send(f'{nick} ({created_at_kst.date()})')
+            count += 1
+
+    await ctx.send(f'과제 확인 완료: 총 {count}명')
 
 
 bot.run(TOKEN)
