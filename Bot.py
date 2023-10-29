@@ -81,12 +81,20 @@ async def on_member_update(before, after):
                             print(f"Member {after.name} changed nickname from '{old_nickname}' to '{new_nickname}'")
 
 
-# 주간 개인 과제 확인
+# 주간 개인 과제 확인 (멤버 리스트로 확인)
 @bot.command()
-async def w(ctx):
+async def we(ctx):
     channel = bot.get_channel(int(CHANNEL_ID))
+
+    if channel is None:
+        await ctx.send('채널을 확인할 수 없습니다')
+        return
+
     threads = channel.threads
-    last_message_ids = []
+
+    guild = channel.guild
+    member_list = guild.members
+    penalty_members = {member.id: member for member in member_list}
 
     count = 0
 
@@ -96,6 +104,10 @@ async def w(ctx):
         try:
             message = await thread.fetch_message(int(message_id))
         except Exception as e:
+            continue
+
+        done_member = message.author
+        if done_member.bot:
             continue
 
         # UTC 시간을 KST로 변환
@@ -121,13 +133,94 @@ async def w(ctx):
         )
 
         if created_at_in_range or edited_at_in_range:
-            nick = message.author.nick
-            if nick is None:
-                nick = message.author.display_name
-            await ctx.send(f'{nick} ({created_at_kst.date()})')
+            done_member_id = done_member.id
+            if done_member_id in penalty_members:
+                del penalty_members[done_member_id]
+
+            done_member_nick = done_member.nick
+
+            if done_member_nick is None:
+                done_member_nick = done_member.display_name
+            await ctx.send(f'{done_member_nick} ({created_at_kst.date()})')
             count += 1
 
     await ctx.send(f'과제 확인 완료: 총 {count}명')
+    await ctx.send('-----------------------\n과제 미수행 멤버')
+
+    for key in penalty_members:
+        penalty_member = penalty_members[key]
+        if penalty_member.bot:
+            continue
+        penalty_member_nick = penalty_member.nick
+
+        if penalty_member_nick is None:
+            penalty_member_nick = penalty_member.display_name
+        await ctx.send(f'{penalty_member_nick}')
+
+
+# 주간 개인 과제 확인 (스레드 이름으로 확인)
+@bot.command()
+async def wa(ctx):
+    channel = bot.get_channel(int(CHANNEL_ID))
+
+    if channel is None:
+        await ctx.send('채널을 확인할 수 없습니다')
+        return
+
+    threads = channel.threads
+    penalty_members = []
+    count = 0
+
+    await ctx.send('과제 확인 시작')
+    for thread in threads:
+        message_id = thread.last_message_id
+        try:
+            message = await thread.fetch_message(int(message_id))
+        except Exception as e:
+            continue
+
+        # UTC 시간을 KST로 변환
+        kst_timezone = timezone(timedelta(hours=9))  # 한국 표준시(KST)
+        created_at_kst = message.created_at.astimezone(kst_timezone)
+
+        if message.edited_at:
+            edited_at_kst = message.edited_at.astimezone(kst_timezone)
+        else:
+            edited_at_kst = created_at_kst
+
+        # 현재 시간과 비교할 범위 계산 (KST)
+        now_kst = datetime.now(kst_timezone)
+        start_of_week_kst = now_kst - timedelta(days=7)
+
+        # 메시지 생성 날짜와 편집 날짜 확인 (UTC -> KST)
+        created_at_in_range = (
+                start_of_week_kst.date() <= created_at_kst.date() <= now_kst.date()
+        )
+
+        edited_at_in_range = (
+                start_of_week_kst.date() <= edited_at_kst.date() <= now_kst.date()
+        )
+
+        if created_at_in_range or edited_at_in_range:
+            done_member = message.author
+            done_member_nick = done_member.nick
+
+            if done_member_nick is None:
+                done_member_nick = done_member.display_name
+
+            if done_member_nick == message.channel.name:
+                if done_member.bot:
+                    continue
+                await ctx.send(f'{done_member_nick} ({created_at_kst.date()})')
+                count += 1
+            else:
+                penalty_members.append(message.channel.name)
+        else:
+            penalty_members.append(message.channel.name)
+    await ctx.send(f'과제 확인 완료: 총 {count}명')
+    await ctx.send('-----------------------\n과제 미수행 멤버')
+    output = ', '.join(str(x) for x in penalty_members)
+    await ctx.send(f'[{output}] 총 {len(penalty_members)}명')
 
 
 bot.run(TOKEN)
