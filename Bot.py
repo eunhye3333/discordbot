@@ -2,8 +2,9 @@ import discord
 from discord.ext import commands
 from datetime import datetime, timedelta, timezone
 
-TOKEN = 'token'
-CHANNEL_ID = 'channel'
+TOKEN = ''
+# CHANNEL_ID = ''
+CHANNEL_ID = ''
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -160,7 +161,7 @@ async def we(ctx):
 
 # 주간 개인 과제 확인 (스레드 이름으로 확인)
 @bot.command()
-async def wa(ctx):
+async def w(ctx):
     channel = bot.get_channel(int(CHANNEL_ID))
 
     if channel is None:
@@ -172,6 +173,13 @@ async def wa(ctx):
     count = 0
 
     await ctx.send('과제 확인 시작')
+
+    # 현재 시간
+    kst_timezone = timezone(timedelta(hours=9))  # 한국 표준시(KST)
+    today = datetime.now(kst_timezone)
+    start_day = today - timedelta(days=7)
+    end_day = today - timedelta(days=1)
+
     for thread in threads:
         message_id = thread.last_message_id
         try:
@@ -179,8 +187,6 @@ async def wa(ctx):
         except Exception as e:
             continue
 
-        # UTC 시간을 KST로 변환
-        kst_timezone = timezone(timedelta(hours=9))  # 한국 표준시(KST)
         created_at_kst = message.created_at.astimezone(kst_timezone)
 
         if message.edited_at:
@@ -188,17 +194,13 @@ async def wa(ctx):
         else:
             edited_at_kst = created_at_kst
 
-        # 현재 시간과 비교할 범위 계산 (KST)
-        now_kst = datetime.now(kst_timezone)
-        start_of_week_kst = now_kst - timedelta(days=7)
-
         # 메시지 생성 날짜와 편집 날짜 확인 (UTC -> KST)
         created_at_in_range = (
-                start_of_week_kst.date() <= created_at_kst.date() <= now_kst.date()
+                start_day.date() <= created_at_kst.date() <= end_day.date()
         )
 
         edited_at_in_range = (
-                start_of_week_kst.date() <= edited_at_kst.date() <= now_kst.date()
+                start_day.date() <= edited_at_kst.date() <= end_day.date()
         )
 
         if created_at_in_range or edited_at_in_range:
@@ -222,5 +224,49 @@ async def wa(ctx):
     output = ', '.join(str(x) for x in penalty_members)
     await ctx.send(f'[{output}] 총 {len(penalty_members)}명')
 
+
+@bot.command()
+async def change_content(ctx):
+    channel = bot.get_channel(int(CHANNEL_ID))
+    threads = channel.threads
+
+    message_id = ''
+    member_id = ''
+    for thread in threads:
+        if thread.name == 'nickname':  # 짝수인 경우
+            message = await thread.fetch_message(int(message_id))
+            await message.edit(content=f'<@{member_id}>')
+            break
+
+
+@bot.event
+async def on_member_remove(leave_member):
+    channel = bot.get_channel(int(CHANNEL_ID))
+
+    if channel is None:
+        return
+
+    leave_member_nick = leave_member.nick
+
+    if leave_member_nick is None:
+        leave_member_nick = leave_member.display_name
+    if leave_member_nick is None:
+        leave_member_nick = leave_member.name
+
+    threads = channel.threads
+
+    for thread in threads:
+        message_id = thread.last_message_id
+        try:
+            message = await thread.fetch_message(int(message_id))
+        except Exception as e:
+            continue
+
+        message_author_nick = message.author.nick
+        if message_author_nick is None:
+            message_author_nick = message.author.display_name
+
+        if thread.name == leave_member_nick or message_author_nick == leave_member_nick:
+            await thread.delete()
 
 bot.run(TOKEN)
